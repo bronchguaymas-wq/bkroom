@@ -123,14 +123,12 @@ local Esp = {
 	Enabled = false,
 	MonstersEnabled = false,
 	ShowLabels = true,
-	ValueFilter = false,
-	MinValue = 0,
-	MaxValue = 5000,
-	MaxLimit = 5000,
 	Color = Color3.fromRGB(255, 211, 110),
 	TextColor = Color3.fromRGB(140, 235, 255),
 	MonsterColor = Color3.fromRGB(255, 70, 95),
 	MonsterTextColor = Color3.fromRGB(255, 160, 190),
+	MinValue = 0,
+	MaxValue = 5000,
 }
 Hub.Esp = Esp
 local FullBright = { Enabled = false, Saved = {}, Connections = {} }
@@ -277,29 +275,35 @@ local function refresh(item, record)
 		forget(item)
 		return
 	end
-	if not itemIsDescendantOf(Workspace) or not isCandidate(item) then
+	if not item:IsDescendantOf(Workspace) or not isCandidate(item) then
 		forget(item)
 		return
 	end
 	local anchor = anchorPart(item)
-	if not anchor or (not record.IsMonster and (not isFreeInWorld(item) or tonumber(itemGetAttribute(price)) == nil)) then
+	if not anchor or (not record.IsMonster and (not isFreeInWorld(item) or tonumber(item:GetAttribute("price")) == nil)) then
 		clearVisual(record)
 		return
 	end
-	if not record.IsMonster and not passesValueFilter(item) then
-		clearVisual(record)
-		return
+	
+	-- NEW: Value Range Filter for Items
+	if not record.IsMonster then
+		local price = tonumber(item:GetAttribute("price")) or 0
+		if price < Esp.MinValue or price > Esp.MaxValue then
+			clearVisual(record)
+			return
+		end
 	end
+	
 	if record.IsMonster then
-		local humanoid = itemFindFirstChildOfClass(Humanoid)
-		if humanoid and humanoid.Health = 0 then
+		local humanoid = item:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health <= 0 then
 			clearVisual(record)
 			return
 		end
 	end
 	if not record.Highlight then
-		local highlight = Instance.new(Highlight)
-		highlight.Name = record.IsMonster and BackroomsMonsterHighlight or BackroomsItemHighlight
+		local highlight = Instance.new("Highlight")
+		highlight.Name = record.IsMonster and "BackroomsMonsterHighlight" or "BackroomsItemHighlight"
 		highlight.Adornee = item
 		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 		highlight.FillTransparency = 0.7
@@ -308,16 +312,16 @@ local function refresh(item, record)
 		record.Highlight = highlight
 	end
 	if not record.Billboard then
-		local billboard = Instance.new(BillboardGui)
-		billboard.Name = record.IsMonster and BackroomsMonsterLabel or BackroomsItemLabel
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = record.IsMonster and "BackroomsMonsterLabel" or "BackroomsItemLabel"
 		billboard.Size = UDim2.fromOffset(240, 42)
 		billboard.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
 		billboard.AlwaysOnTop = true
 		billboard.MaxDistance = 0
 		billboard.LightInfluence = 0
 		billboard.Parent = Hub.LabelGui
-		local label = Instance.new(TextLabel)
-		label.Name = Details
+		local label = Instance.new("TextLabel")
+		label.Name = "Details"
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
 		label.BorderSizePixel = 0
@@ -329,11 +333,11 @@ local function refresh(item, record)
 		record.Billboard = billboard
 		record.Label = label
 	end
-	local name = record.IsMonster and (itemGetAttribute(EntityType) or itemGetAttribute(DisplayName)) or itemGetAttribute(name)
-	if type(name) ~= string or name ==  then
+	local name = record.IsMonster and (item:GetAttribute("EntityType") or item:GetAttribute("DisplayName")) or item:GetAttribute("name")
+	if type(name) ~= "string" or name == "" then
 		name = item.Name
 		if record.IsMonster then
-			name = namegsub(NPC$, )gsub((%l)(%u), %1 %2)
+			name = name:gsub("NPC$", ""):gsub("(%l)(%u)", "%1 %2")
 		end
 	end
 	local color = record.IsMonster and Esp.MonsterColor or Esp.Color
@@ -344,7 +348,7 @@ local function refresh(item, record)
 	record.Billboard.Enabled = record.IsMonster or Esp.ShowLabels
 	record.Label.TextColor3 = record.IsMonster and Esp.MonsterTextColor or Esp.TextColor
 	record.Label.TextSize = 12
-	record.Label.Text = record.IsMonster and name or string.format(%snWeight %s lb    Value $%s, name, numberText(itemGetAttribute(weight)), numberText(itemGetAttribute(price)))
+	record.Label.Text = record.IsMonster and name or string.format("%s\nWeight: %s lb  |  Value: $%s", name, numberText(item:GetAttribute("weight")), numberText(item:GetAttribute("price")))
 end
 
 local function queueRefresh(item, record)
@@ -2236,59 +2240,48 @@ local ok, failure = xpcall(function()
 	PlayerTabCreateButton({ Name = Default JumpPower, Icon = rotate-ccw, Callback = Hub.ResetJumpPower })
 	PlayerTabCreateButton({ Name = Default FOV, Icon = rotate-ccw, Callback = Hub.ResetFOV })
 	PlayerSettings.Ready = true
-	VisualsCreateSection(Items)
-	Hub.Controls.Esp = VisualsCreateToggle({
-		Name = Items ESP,
+		Visuals:CreateSection("Items")
+	Hub.Controls.Esp = Visuals:CreateToggle({
+		Name = "Items ESP",
 		CurrentValue = false,
 		Callback = Hub.SetEsp,
 	})
-	Hub.Controls.Labels = VisualsCreateToggle({
-		Name = Name, Weight and Value,
+	Hub.Controls.Labels = Visuals:CreateToggle({
+		Name = "Name, Weight and Value",
 		CurrentValue = true,
 		Callback = function(value)
 			Esp.ShowLabels = value
 			refreshAll()
 		end,
 	})
-	Visuals:CreateSection("Value filter")
-	Hub.Controls.ValueFilter = Visuals:CreateToggle({
-		Name = "Filter by value",
-		CurrentValue = false,
-		Callback = function(enabled)
-			Esp.ValueFilter = enabled == true
+	-- NEW: Value Range Filters
+	Hub.Controls.MinValue = Visuals:CreateNumberBox({
+		Name = "Min Value",
+		Desc = "Minimum item value to display",
+		Min = 0,
+		Max = 10000,
+		Increment = 1,
+		Rounding = 0,
+		CurrentValue = Esp.MinValue,
+		Callback = function(value)
+			Esp.MinValue = tonumber(value) or 0
 			refreshAll()
 		end,
 	})
-	local function parseValue(text, fallback)
-		local n = tonumber((tostring(text):gsub("[%$,%s]", "")))
-		if not n or n ~= n then return fallback end
-		return math.clamp(math.floor(n), 0, Esp.MaxLimit)
-	end
-	local function createValueBox(name, placeholder, default, onChange)
-		if type(Visuals.CreateInput) == "function" then
-			return Visuals:CreateInput({
-				Name = name,
-				PlaceholderText = placeholder,
-				CurrentValue = tostring(default),
-				Callback = onChange,
-			})
-		end
-		return Visuals:CreateSlider({
-			Name = name,
-			Range = { 0, Esp.MaxLimit }, Increment = 10,
-			CurrentValue = default,
-			Callback = onChange,
-		})
-	end
-	Hub.Controls.MinValue = createValueBox("Min value ($)", "100", Esp.MinValue, function(text)
-		Esp.MinValue = parseValue(text, Esp.MinValue)
-		refreshAll()
-	end)
-	Hub.Controls.MaxValue = createValueBox("Max value ($)", "500", Esp.MaxValue, function(text)
-		Esp.MaxValue = parseValue(text, Esp.MaxValue)
-		refreshAll()
-	end)
-	VisualsCreateSection(Monsters)
+	Hub.Controls.MaxValue = Visuals:CreateNumberBox({
+		Name = "Max Value",
+		Desc = "Maximum item value to display",
+		Min = 0,
+		Max = 10000,
+		Increment = 1,
+		Rounding = 0,
+		CurrentValue = Esp.MaxValue,
+		Callback = function(value)
+			Esp.MaxValue = tonumber(value) or 5000
+			refreshAll()
+		end,
+	})
+	Visuals:CreateSection("Monsters")
 	Hub.Controls.Monsters = VisualsCreateToggle({
 		Name = Monsters ESP,
 		CurrentValue = false,
